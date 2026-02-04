@@ -1,0 +1,108 @@
+
+<div class="relative h-screen w-full bg-[#020617] text-slate-200 overflow-hidden font-['Space_Grotesk'] flex flex-col items-center justify-center cursor-pointer"
+     (click)="handleGlobalClick()">
+  
+  <!-- Startup Diagnostic Overlay -->
+  @if (ai.booting()) {
+    <div class="fixed inset-0 z-[100] bg-slate-950 flex flex-col items-center justify-center p-10 font-mono">
+      <div class="max-w-md w-full glass p-8 rounded-2xl border border-indigo-500/30 shadow-[0_0_50px_rgba(99,102,241,0.2)]">
+        <div class="flex items-center gap-4 mb-8">
+          <div class="w-12 h-12 rounded-xl bg-indigo-600/20 flex items-center justify-center animate-pulse border border-indigo-400/40">
+            <i class="fa-solid fa-brain text-indigo-400"></i>
+          </div>
+          <div>
+            <h3 class="text-indigo-400 font-bold tracking-[0.2em] uppercase text-sm">Neural Speech Link</h3>
+            <p class="text-[10px] text-slate-500">INITIATING_SYSTEM_HANDSHAKE...</p>
+          </div>
+        </div>
+        
+        <div class="space-y-3">
+          @for (log of ai.diagnosticLogs(); track $index) {
+            <div class="flex items-center justify-between text-[11px] tracking-widest">
+              <div class="flex items-center gap-3">
+                @if (log.status === 'pending') {
+                  <i class="fa-solid fa-circle-notch fa-spin text-slate-600"></i>
+                } @else if (log.status === 'success') {
+                  <i class="fa-solid fa-check text-emerald-500"></i>
+                } @else {
+                  <i class="fa-solid fa-triangle-exclamation text-red-500"></i>
+                }
+                <span [class]="log.status === 'pending' ? 'text-slate-500' : (log.status === 'success' ? 'text-slate-300' : 'text-red-400')">
+                  {{ log.msg }}
+                </span>
+              </div>
+              @if (log.status === 'success') {
+                <span class="text-emerald-500 font-bold">[OK]</span>
+              }
+            </div>
+          }
+        </div>
+      </div>
+    </div>
+  }
+
+  <!-- Background Ambience -->
+  <div class="absolute inset-0 pointer-events-none">
+    <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[900px] h-[900px] bg-indigo-600/5 blur-[150px] rounded-full transition-all duration-[2000ms]"
+         [style.transform]="ai.isSpeaking() ? 'scale(1.4) translate(-50%, -50%)' : 'scale(1) translate(-50%, -50%)'"></div>
+    <div class="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,#020617_85%)] opacity-90"></div>
+  </div>
+
+  <!-- Central Focal Point: The Digital Face -->
+  <div class="relative z-10 flex flex-col items-center gap-20 transition-all duration-1000"
+       [class.opacity-40]="!isStarted() && !ai.booting()">
+    
+    <div class="neural-orb" 
+         [class.speaking]="ai.isSpeaking()" 
+         [class.listening]="ai.isListening()" 
+         [class.thinking]="ai.isTyping()">
+      
+      <!-- Reactive Glow -->
+      <div class="absolute inset-0 rounded-full transition-all duration-1000 blur-[80px]"
+           [class]="ai.isListening() ? 'bg-red-500/10' : (ai.isSpeaking() ? 'bg-indigo-400/20' : 'bg-cyan-500/5')"></div>
+      
+      <div class="orb-ring ring-1"></div>
+      <div class="orb-ring ring-2"></div>
+      <div class="orb-ring ring-3"></div>
+      <div class="core-node"></div>
+    </div>
+
+    <div class="text-center space-y-8">
+      <h2 class="text-5xl font-extralight tracking-[0.5em] text-white transition-all duration-700">
+        @if (!isStarted()) { 
+          <span class="text-indigo-400/40 animate-pulse text-2xl uppercase tracking-[1em]">Connect Neural Link</span> 
+        } @else if (ai.isListening()) { 
+          <span class="text-red-400 drop-shadow-[0_0_20px_rgba(239,68,68,0.5)]">LISTENING</span> 
+        } @else if (ai.isSpeaking()) { 
+          <span class="text-indigo-300 drop-shadow-[0_0_20px_rgba(99,102,241,0.5)]">FRIDAY</span> 
+        } @else if (ai.isTyping()) { 
+          <span class="text-cyan-400 drop-shadow-[0_0_15px_rgba(34,211,238,0.4)] opacity-40">SYNCING</span> 
+        } @else { 
+          <span class="opacity-10 tracking-[0.8em]">IDLE</span> 
+        }
+      </h2>
+      
+      @if (isStarted()) {
+        <div class="flex justify-center gap-4 h-12 items-center">
+          @for (i of [1,2,3,4,5,6,7,8,9,10,11,12]; track $index) {
+            <div class="h-1 rounded-full transition-all duration-500 ease-out"
+                 [style.width]="ai.isSpeaking() ? '18px' : '6px'"
+                 [class]="ai.isSpeaking() ? 'bg-indigo-400 shadow-[0_0_20px_#818cf8] h-10' : (ai.isListening() ? 'bg-red-500 shadow-[0_0_15px_#ef4444] h-4' : 'bg-white/5 h-1')"></div>
+          }
+        </div>
+      }
+    </div>
+  </div>
+
+  <!-- Ghost Status Footnote -->
+  @if (isStarted()) {
+    <div class="absolute bottom-10 flex flex-col items-center gap-1 font-mono text-[7px] tracking-[0.6em] uppercase text-slate-800 pointer-events-none select-none">
+      <span>Neural_Agent_Protocol_Active</span>
+      <div class="flex gap-4">
+        <span [class.text-indigo-900]="true">Mode: Autonomous</span>
+        <span [class.text-indigo-900]="true">Stream: Encrypted</span>
+      </div>
+    </div>
+  }
+
+</div>

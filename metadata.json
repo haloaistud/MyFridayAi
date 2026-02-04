@@ -1,0 +1,7 @@
+{
+  "name": "Friday: Emotional Intelligence Assistant",
+  "description": "A sophisticated personal AI companion designed for emotional support, motivation coaching, and deep listening, featuring a sleek, modern interface and multi-mode orchestration.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
