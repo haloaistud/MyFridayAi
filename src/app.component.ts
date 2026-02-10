@@ -1,6 +1,10 @@
 
 import { Component, inject, signal, OnInit } from '@angular/core';
 import { AiService } from './services/ai.service';
+import { PersonalityManagerService } from './services/personality.manager';
+import { AnalyticsService } from './services/analytics.service';
+import { ConversationStoreService } from './services/conversation.store';
+import { PersonalityMode } from './services/types';
 import { FormsModule } from '@angular/forms';
 
 @Component({
@@ -12,7 +16,17 @@ import { FormsModule } from '@angular/forms';
 })
 export class AppComponent implements OnInit {
   ai = inject(AiService);
+  personalityManager = inject(PersonalityManagerService);
+  analytics = inject(AnalyticsService);
+  conversationStore = inject(ConversationStoreService);
+  
   isStarted = signal(false);
+  showPersonalityMenu = signal(false);
+  showAnalytics = signal(false);
+  
+  availablePersonalities = this.personalityManager.getAllPersonalities();
+  currentPersonality = this.personalityManager.currentPersonality;
+  metrics = this.analytics.metrics;
 
   ngOnInit() {
     this.ai.runDiagnostics();
@@ -49,6 +63,30 @@ export class AppComponent implements OnInit {
       }
     } catch (err) {
       console.error("Neural link interrupted:", err);
+    }
+  }
+
+  switchPersonality(mode: PersonalityMode) {
+    this.personalityManager.setPersonality(mode);
+    this.showPersonalityMenu.set(false);
+  }
+
+  async exportConversation() {
+    const data = await this.conversationStore.exportConversation();
+    const blob = new Blob([data], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `friday-conversation-${new Date().toISOString()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  clearConversation() {
+    if (confirm('Clear all conversation history?')) {
+      this.conversationStore.clear();
+      this.analytics.reset();
+      this.isStarted.set(false);
     }
   }
 }

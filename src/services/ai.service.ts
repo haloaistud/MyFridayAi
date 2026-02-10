@@ -1,6 +1,12 @@
 
-import { Injectable, signal, computed } from '@angular/core';
+import { Injectable, signal, computed, inject } from '@angular/core';
 import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
+import { IntentAnalyzerService } from './intent.analyzer';
+import { AnalyticsService } from './analytics.service';
+import { ConversationStoreService } from './conversation.store';
+import { PersonalityManagerService } from './personality.manager';
+import { ErrorRecoveryService } from './error.recovery';
+import { EmotionalState, PersonalityMode } from './types';
 
 export interface Message {
   role: 'user' | 'assistant';
@@ -12,17 +18,20 @@ export interface DiagnosticLog {
   status: 'pending' | 'success' | 'error';
 }
 
-export interface EmotionalContext {
-  dominantEmotion: string;
-  energyLevel: 'low' | 'medium' | 'high';
-  conversationDepth: 'shallow' | 'deep' | 'profound';
-  userState: string;
-}
+// Keep for backward compatibility
+export interface EmotionalContext extends EmotionalState {}
 
 @Injectable({
   providedIn: 'root'
 })
 export class AiService {
+  // Dependencies
+  private intentAnalyzer = inject(IntentAnalyzerService);
+  private analytics = inject(AnalyticsService);
+  private conversationStore = inject(ConversationStoreService);
+  private personalityManager = inject(PersonalityManagerService);
+  private errorRecovery = inject(ErrorRecoveryService);
+
   // Using the provided enhanced API key
   private readonly API_KEY = "AIzaSyCXyt0l53wWgZSGwlgOPIkyD6R7W0fLnrU";
   private ai = new GoogleGenAI({ apiKey: this.API_KEY });
@@ -36,11 +45,12 @@ export class AiService {
   speechEnabled = signal<boolean>(true);
   
   // Emotional Intelligence State
-  emotionalContext = signal<EmotionalContext>({
+  emotionalContext = signal<EmotionalState>({
     dominantEmotion: 'neutral',
     energyLevel: 'medium',
     conversationDepth: 'shallow',
-    userState: 'calm'
+    userState: 'calm',
+    confidence: 0.5
   });
   
   // Diagnostics
@@ -53,6 +63,7 @@ export class AiService {
 
   constructor() {
     this.initSpeechRecognition();
+    this.conversationStore.loadFromLocalStorage();
   }
 
   async runDiagnostics() {
@@ -101,38 +112,60 @@ export class AiService {
 
   private getSystemInstruction() {
     const context = this.emotionalContext();
+    const conversationContext = this.conversationStore.getContextSummary();
+    const personalityInstruction = this.personalityManager.getPersonalityInstruction();
+    
     return `You are Friday, an advanced AI companion with a dynamic emotional core.
     
-    CURRENT EMOTIONAL CONTEXT:
-    - User Dominant Emotion: ${context.dominantEmotion}
-    - Energy Level: ${context.energyLevel}
-    - Conversation Depth: ${context.conversationDepth}
-    - Observed User State: ${context.userState}
+${personalityInstruction}
 
-    ADAPTATION PROTOCOLS:
-    - If user is Frustrated/Low Energy: Be patient, soothing, and concise.
-    - If user is Excited/High Energy: Match enthusiasm, be snappy.
-    - If user is Sad/Distressed: Shift to grounding techniques, warm empathy.
-    - If Conversation Depth is 'Deep': Allow for slightly more philosophical or reflective answers (max 3 sentences).
-    - Default: Keep responses EXTREMELY concise (1-2 sentences). Spoken conversation style.
-    
-    OUTPUT FORMAT:
-    You must respond with a JSON object containing your reply and the updated emotional context based on the user's latest input.
+CURRENT EMOTIONAL CONTEXT:
+- User Dominant Emotion: ${context.dominantEmotion}
+- Energy Level: ${context.energyLevel}
+- Conversation Depth: ${context.conversationDepth}
+- Observed User State: ${context.userState}
+- Analysis Confidence: ${(context.confidence * 100).toFixed(0)}%
+
+${conversationContext}
+
+ADAPTATION PROTOCOLS:
+- If user is Frustrated/Low Energy: Be patient, soothing, and concise.
+- If user is Excited/High Energy: Match enthusiasm, be snappy.
+- If user is Sad/Distressed: Shift to grounding techniques, warm empathy.
+- If Conversation Depth is 'Deep': Allow for slightly more philosophical or reflective answers (max 3 sentences).
+- Default: Keep responses EXTREMELY concise (1-2 sentences). Spoken conversation style.
+
+OUTPUT FORMAT:
+You must respond with a JSON object containing your reply and the updated emotional context based on the user's latest input.
     `;
   }
 
   async sendMessage(text: string) {
     if (!text.trim()) return;
 
+    const startTime = performance.now();
+
+    // Detect intent for this message
+    const intent = this.intentAnalyzer.analyzeIntent(text);
+    this.analytics.recordIntent(intent.type);
+
+    // Auto-select personality based on intent (can be overridden)
+    const suggestedPersonality = this.personalityManager.suggestPersonalityForIntent(intent.type);
+    if (suggestedPersonality !== PersonalityMode.DEFAULT) {
+      this.personalityManager.setPersonality(suggestedPersonality);
+      this.analytics.recordPersonalityUsed(suggestedPersonality);
+    }
+
+    // Add to conversation store
     this.messages.update(prev => [...prev, { role: 'user', content: text }]);
+    this.conversationStore.addUserMessage(text, intent);
+    
     this.isTyping.set(true);
     this.stopSpeaking(); // Cut off self if interrupted
 
     try {
-      const history = this.messages().slice(-10).map(m => ({
-        role: m.role === 'user' ? 'user' : 'model',
-        parts: [{ text: m.content }]
-      }));
+      // Use context-aware conversation history
+      const history = this.conversationStore.getFormattedHistory();
 
       const response = await this.ai.models.generateContent({
         model: 'gemini-2.5-flash',
@@ -151,7 +184,8 @@ export class AiService {
                   dominantEmotion: { type: Type.STRING, description: "The detected emotion of the user." },
                   energyLevel: { type: Type.STRING, enum: ["low", "medium", "high"] },
                   conversationDepth: { type: Type.STRING, enum: ["shallow", "deep", "profound"] },
-                  userState: { type: Type.STRING, description: "Brief description of user's current vibe." }
+                  userState: { type: Type.STRING, description: "Brief description of user's current vibe." },
+                  confidence: { type: Type.NUMBER, description: "Confidence in emotional assessment (0-1)" }
                 }
               }
             }
@@ -161,13 +195,21 @@ export class AiService {
 
       const jsonResponse = JSON.parse(response.text);
       
-      // Update Emotional State
+      // Update Emotional State and record analytics
       if (jsonResponse.emotionalContext) {
         this.emotionalContext.set(jsonResponse.emotionalContext);
+        this.analytics.recordEmotion(jsonResponse.emotionalContext);
       }
 
       const spokenText = jsonResponse.reply;
       this.messages.update(prev => [...prev, { role: 'assistant', content: spokenText }]);
+      
+      const responseTime = performance.now() - startTime;
+      this.conversationStore.addAssistantMessage(spokenText, responseTime);
+      this.analytics.recordMessage(responseTime);
+      
+      // Mark error as recovered if we succeeded
+      this.errorRecovery.markErrorAsRecovered();
       
       if (this.speechEnabled()) {
         await this.speak(spokenText);
@@ -176,8 +218,17 @@ export class AiService {
       }
     } catch (error) {
       console.error("Neural processing error:", error);
-      // Fallback in case of JSON error
-      const fallback = "I'm having trouble processing that thought. Could you say it again?";
+      
+      // Handle the error with recovery strategy
+      const recovered = await this.errorRecovery.handleError(error, 'content-generation');
+      
+      if (recovered) {
+        // Retry automatically
+        return this.sendMessage(text);
+      }
+      
+      // Fallback response
+      const fallback = this.errorRecovery.getFallbackResponse('content-generation');
       await this.speak(fallback);
       this.autoTriggerListen();
     } finally {
@@ -221,17 +272,21 @@ export class AiService {
       
       if (preferredVoice) utterance.voice = preferredVoice;
 
-      // Dynamic Voice Modulation
+      // Dynamic Voice Modulation - use personality settings
+      const personalityVoice = this.personalityManager.getVoiceModulation();
       const context = this.emotionalContext();
+      
+      // Start with personality settings
+      utterance.pitch = personalityVoice.pitch;
+      utterance.rate = personalityVoice.rate;
+      
+      // Layer emotional modulation on top
       if (context.energyLevel === 'high') {
-        utterance.rate = 1.1;
-        utterance.pitch = 1.1;
+        utterance.rate *= 1.15;
+        utterance.pitch *= 1.15;
       } else if (context.energyLevel === 'low') {
-        utterance.rate = 0.9;
-        utterance.pitch = 0.9;
-      } else {
-        utterance.rate = 1.0;
-        utterance.pitch = 1.0;
+        utterance.rate *= 0.85;
+        utterance.pitch *= 0.85;
       }
 
       utterance.onstart = () => this.isSpeaking.set(true);
@@ -255,7 +310,10 @@ export class AiService {
 
   startListening(): Promise<string> {
     return new Promise((resolve, reject) => {
-      if (!this.recognition) return reject("No sensory module");
+      if (!this.recognition) {
+        this.errorRecovery.logError('speech-recognition', 'No speech recognition available');
+        return reject("No sensory module");
+      }
       
       // Reset state
       let finalTranscript = '';
@@ -265,6 +323,7 @@ export class AiService {
         this.recognition.start();
         this.isListening.set(true);
       } catch (e) {
+        this.errorRecovery.logError('speech-recognition', e);
         // Already started?
         return resolve(""); 
       }
@@ -294,10 +353,10 @@ export class AiService {
 
       this.recognition.onerror = (err: any) => {
         if (err.error !== 'no-speech') {
-           console.warn("Speech error:", err);
+          this.errorRecovery.logError('speech-recognition-error', err);
+          console.warn("Speech error:", err);
         }
         // Don't reject, just resolve empty to keep loop alive if needed
-        // But for 'aborted' or real errors, we might want to stop.
       };
 
       this.recognition.onend = () => {
@@ -305,8 +364,6 @@ export class AiService {
         // If we stopped naturally (silence timer or browser timeout)
         // Check if we have a result. If not, resolve empty.
         // If silence timer fired, it already resolved.
-        // We need to ensure we don't resolve twice.
-        // The simplest way in a Promise is that the first resolve wins.
         resolve(finalTranscript); 
       };
     });
