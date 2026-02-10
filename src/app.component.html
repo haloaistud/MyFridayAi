@@ -48,6 +48,89 @@
     <div class="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,#020617_85%)] opacity-90"></div>
   </div>
 
+  <!-- Control Panels - Top Left -->
+  @if (isStarted() && !ai.booting()) {
+    <div class="absolute top-6 left-6 z-40 flex gap-3">
+      <!-- Personality Menu Button -->
+      <button (click)="showPersonalityMenu.set(!showPersonalityMenu()); $event.stopPropagation()"
+              class="glass px-4 py-2 rounded-lg hover:bg-indigo-500/10 transition text-[11px] tracking-widest font-semibold border border-indigo-400/30 pointer-events-auto">
+        <i class="fa-solid fa-wand-magic-sparkles text-indigo-400 mr-2"></i>
+        {{ currentPersonality() }}
+      </button>
+
+      <!-- Analytics Button -->
+      <button (click)="showAnalytics.set(!showAnalytics()); $event.stopPropagation()"
+              class="glass px-4 py-2 rounded-lg hover:bg-cyan-500/10 transition text-[11px] tracking-widest font-semibold border border-cyan-400/30 pointer-events-auto">
+        <i class="fa-solid fa-chart-line text-cyan-400 mr-2"></i>
+        METRICS
+      </button>
+    </div>
+
+    <!-- Personality Menu Dropdown -->
+    @if (showPersonalityMenu()) {
+      <div class="absolute top-16 left-6 glass rounded-lg border border-indigo-400/30 p-2 z-50 min-w-48 pointer-events-auto"
+           (click)="$event.stopPropagation()">
+        @for (personality of availablePersonalities; track personality.name) {
+          <button (click)="switchPersonality(personality.name)"
+                  [class.bg-indigo-500/20]="currentPersonality() === personality.name"
+                  class="w-full text-left px-3 py-2 hover:bg-indigo-500/10 rounded text-[10px] uppercase tracking-wide transition">
+            <div class="font-bold text-indigo-300">{{ personality.name }}</div>
+            <div class="text-[8px] text-slate-400">{{ personality.description }}</div>
+          </button>
+        }
+      </div>
+    }
+
+    <!-- Analytics Panel -->
+    @if (showAnalytics()) {
+      <div class="absolute top-16 right-6 glass rounded-lg border border-cyan-400/30 p-4 z-50 min-w-64 pointer-events-auto font-mono text-[10px]"
+           (click)="$event.stopPropagation()">
+        <div class="space-y-2">
+          <div class="flex justify-between text-cyan-400 font-bold pb-2 border-b border-cyan-400/20">
+            <span>ENGAGEMENT_METRICS</span>
+            <span class="cursor-pointer hover:text-red-400" (click)="showAnalytics.set(false)">✕</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-slate-400">Messages:</span>
+            <span class="text-cyan-300 font-semibold">{{ metrics().messageCount }}</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-slate-400">Avg Response:</span>
+            <span class="text-cyan-300 font-semibold">{{ metrics().averageResponseTime }}ms</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-slate-400">Engagement:</span>
+            <span class="text-cyan-300 font-semibold">{{ Math.round(metrics().engagementScore) }}/100</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-slate-400">Primary Emotion:</span>
+            <span class="text-cyan-300 font-semibold">{{ metrics().emotionTrend[metrics().emotionTrend.length - 1] || 'N/A' }}</span>
+          </div>
+          <div class="flex justify-between pt-2 border-t border-cyan-400/20">
+            <span class="text-slate-400">Personalities:</span>
+            <span class="text-cyan-300 font-semibold">{{ metrics().personalitiesUsed.length }}</span>
+          </div>
+        </div>
+      </div>
+    }
+  }
+
+  <!-- Action Buttons - Bottom Right -->
+  @if (isStarted() && !ai.booting()) {
+    <div class="absolute bottom-6 right-6 z-40 flex gap-2 pointer-events-auto">
+      <button (click)="exportConversation(); $event.stopPropagation()"
+              class="glass px-3 py-2 rounded-lg hover:bg-emerald-500/10 transition text-[10px] tracking-widest font-semibold border border-emerald-400/30"
+              title="Export conversation">
+        <i class="fa-solid fa-download text-emerald-400"></i>
+      </button>
+      <button (click)="clearConversation(); $event.stopPropagation()"
+              class="glass px-3 py-2 rounded-lg hover:bg-red-500/10 transition text-[10px] tracking-widest font-semibold border border-red-400/30"
+              title="Clear history">
+        <i class="fa-solid fa-trash text-red-400"></i>
+      </button>
+    </div>
+  }
+
   <!-- Central Focal Point: The Digital Face -->
   <div class="relative z-10 flex flex-col items-center gap-20 transition-all duration-1000"
        [class.opacity-40]="!isStarted() && !ai.booting()">
